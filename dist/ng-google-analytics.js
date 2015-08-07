@@ -4,52 +4,95 @@
 
   angular.module('vtex.ga', []).constant('gaConfig', {
     enableVirtualPageviews: true
-  }).service('gaService', function($rootScope, $window, $timeout, gaConfig) {
+  }).factory('GAEvent', function() {
+    var GAEvent;
+    return GAEvent = (function() {
+      function GAEvent(data) {
+        var parsedValue, ref;
+        if (data == null) {
+          data = {};
+        }
+        if ((!angular.isObject(data)) || (angular.isArray(data))) {
+          return;
+        }
+        parsedValue = (ref = parseInt(data.value)) != null ? ref : data.value;
+        this.category = data.category;
+        this.action = data.action;
+        this.label = gaConfig.appId ? gaConfig.appId + ': ' + data.label : data.label;
+        this.value = typeof parsedValue === 'number' ? parsedValue : null;
+        this.metadata = angular.isObject(data.metadata) ? data.metadata : {};
+      }
+
+      return GAEvent;
+
+    })();
+  }).service('gaService', function($rootScope, $window, $timeout, gaConfig, GAEvent) {
     var GAService;
     return new (GAService = (function() {
+      var class1;
+
       function GAService() {
         this.trackHttpError = bind(this.trackHttpError, this);
         this.trackClick = bind(this.trackClick, this);
-        this.create();
+        return class1.apply(this, arguments);
       }
 
-      GAService.prototype.create = function() {
-        var data;
-        data = gaConfig.userId ? _.omit(gaConfig, 'trackingId') : 'auto';
-        return $window.ga('create', gaConfig.trackingId, data);
-      };
+      class1 = GAService.create;
 
-      GAService.prototype.generateLabel = function(label) {
-        if (gaConfig.appId) {
-          return gaConfig.appId + ': ' + label;
-        } else {
-          return label;
+      GAService.prototype.create = function() {
+        var config, data, k, v;
+        config = {};
+        for (k in gaConfig) {
+          v = gaConfig[k];
+          if (k !== 'trackingId') {
+            config[k] = v;
+          }
         }
+        data = gaConfig.userId ? config : 'auto';
+        return $window.ga('create', gaConfig.trackingId, data);
       };
 
       GAService.prototype.trackPageview = function(page) {
         return $window.ga('send', 'pageview', page != null ? page : location.pathname + location.hash);
       };
 
-      GAService.prototype.trackEvent = function(metadata) {
-        if (metadata == null) {
-          metadata = [];
+      GAService.prototype.trackEvent = function(data) {
+        var event, filteredData, k, ref, v;
+        if (data == null) {
+          data = {};
         }
-        return $window.ga.apply($window, ['send', 'event'].concat(slice.call(metadata)));
+        event = new GAEvent(data);
+        filteredData = [];
+        ref = angular.copy(event);
+        for (k in ref) {
+          v = ref[k];
+          if ((v != null) || (v != null ? v.length : void 0)) {
+            filteredData.push(v);
+          }
+        }
+        return $window.ga.apply($window, ['send', 'event'].concat(slice.call(filteredData)));
       };
 
       GAService.prototype.trackClick = function(label, value) {
         if (value == null) {
           value = null;
         }
-        return this.trackEvent(['button', 'click', this.generateLabel(label), value]);
+        return this.trackEvent({
+          category: 'button',
+          action: 'click',
+          label: label,
+          value: value
+        });
       };
 
       GAService.prototype.trackHttpError = function(rejection) {
-        var label, ref, ref1;
-        label = this.generateLabel(rejection.config.method + " " + rejection.config.url + " (" + rejection.status + ")");
-        return this.trackEvent([
-          'http', 'error', label, {
+        var ref, ref1;
+        return this.trackEvent({
+          category: 'http',
+          action: 'error',
+          label: rejection.config.method + " " + rejection.config.url + " (" + rejection.status + ")",
+          value: null,
+          metadata: {
             status: rejection.status,
             statusText: rejection.statusText,
             message: (ref = rejection.data.error) != null ? ref.message : void 0,
@@ -59,7 +102,7 @@
             headers: rejection.config.headers,
             userAgent: $window.navigator.userAgent
           }
-        ]);
+        });
       };
 
       return GAService;
@@ -82,25 +125,22 @@
     return {
       restrict: 'A',
       link: function(scope, elem, attrs) {
-        var action, category, label, metadata, ref, ref1, trigger, value;
-        category = attrs.gaCategory;
-        action = attrs.gaAction;
-        label = (ref = attrs.gaLabel) != null ? ref : attrs.name || attrs.label || attrs.id;
-        value = (ref1 = attrs.gaValue) != null ? ref1 : attrs.value;
-        trigger = attrs.gaOn;
-        if (!label) {
-          return;
-        }
-        category || (category = 'button');
-        action || (action = 'click');
-        if (gaConfig.appId) {
-          label = gaConfig.appId + ' ' + label;
-        }
-        metadata = _.filter([category, action, label, value], function(data) {
-          return data != null;
-        });
-        return angular.element(elem).bind(trigger != null ? trigger : action, function() {
-          return gaService.trackEvent(metadata);
+        var appId, trigger;
+        appId = gaConfig.appId;
+        trigger = attrs.gaOn || 'click';
+        return angular.element(elem).bind(trigger, function() {
+          var data, ref;
+          data = {
+            category: attrs.gaCategory,
+            action: attrs.gaAction,
+            label: (ref = attrs.gaLabel) != null ? ref : attrs.name || attrs.label || attrs.id,
+            value: attrs.gaValue,
+            metadata: attrs.gaMetadata || attrs.metadata
+          };
+          if (!(data.category || data.action)) {
+            return;
+          }
+          return gaService.trackEvent(data);
         });
       }
     };

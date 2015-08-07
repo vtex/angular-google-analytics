@@ -4,35 +4,62 @@ angular.module('vtex.ga', [])
   enableVirtualPageviews: true
 
 
-.service 'gaService', ($rootScope, $window, $timeout, gaConfig) ->
+.factory 'GAEvent', ->
+  class GAEvent
+    constructor: (data = {}) ->
+      return if (not angular.isObject data) or (angular.isArray data)
+      parsedValue = parseInt(data.value) ? data.value
+
+      @category = data.category
+      @action = data.action
+      @label = if gaConfig.appId then (gaConfig.appId + ': ' + data.label) else data.label
+      @value = if typeof parsedValue is 'number' then parsedValue else null
+      @metadata = if angular.isObject data.metadata then data.metadata else {}
+
+
+.service 'gaService', ($rootScope, $window, $timeout, gaConfig, GAEvent) ->
   new class GAService
-    constructor: -> @create()
+    constructor: @create
 
     create: ->
-      data = if gaConfig.userId then (_.omit gaConfig, 'trackingId') else 'auto'
-      $window.ga 'create', gaConfig.trackingId, data
+      config = {}
+      config[k] = v for k, v of gaConfig when k isnt 'trackingId'
 
-    generateLabel: (label) -> if gaConfig.appId then (gaConfig.appId + ': ' + label) else label
+      data = if gaConfig.userId then config else 'auto'
+      $window.ga 'create', gaConfig.trackingId, data
 
     trackPageview: (page) -> $window.ga 'send', 'pageview', (page ? (location.pathname + location.hash))
 
-    trackEvent: (metadata = []) -> $window.ga 'send', 'event', metadata...
+    trackEvent: (data = {}) ->
+      event = new GAEvent data
 
-    trackClick: (label, value = null) => @trackEvent ['button', 'click', (@generateLabel label), value]
+      filteredData = []
+      filteredData.push v for k, v of angular.copy event when v? or v?.length
+
+      $window.ga 'send', 'event', filteredData...
+
+    trackClick: (label, value = null) =>
+      @trackEvent
+        category: 'button'
+        action: 'click'
+        label: label
+        value: value
 
     trackHttpError: (rejection) =>
-      label = @generateLabel("#{rejection.config.method} #{rejection.config.url} (#{rejection.status})")
-
-      @trackEvent ['http', 'error', label, {
-        status: rejection.status
-        statusText: rejection.statusText
-        message: rejection.data.error?.message
-        exception: rejection.data.error?.exception
-        url: rejection.config.url
-        params: rejection.config.params
-        headers: rejection.config.headers
-        userAgent: $window.navigator.userAgent
-      }]
+      @trackEvent
+        category: 'http'
+        action: 'error'
+        label: "#{rejection.config.method} #{rejection.config.url} (#{rejection.status})"
+        value: null
+        metadata:
+          status: rejection.status
+          statusText: rejection.statusText
+          message: rejection.data.error?.message
+          exception: rejection.data.error?.exception
+          url: rejection.config.url
+          params: rejection.config.params
+          headers: rejection.config.headers
+          userAgent: $window.navigator.userAgent
 
 
 .service 'gaInterceptor', ($q, gaService) ->
@@ -49,17 +76,17 @@ angular.module('vtex.ga', [])
     trigger = attrs.gaOn or 'click'
 
     angular.element(elem).bind trigger, ->
-      category = attrs.gaCategory
-      action = attrs.gaAction
-      label = attrs.gaLabel ? (attrs.name or attrs.label or attrs.id)
-      value = attrs.gaValue ? attrs.value
 
-      return if not (category or action or label)
+      data =
+        category: attrs.gaCategory
+        action: attrs.gaAction
+        label: attrs.gaLabel ? (attrs.name or attrs.label or attrs.id)
+        value: attrs.gaValue
+        metadata: attrs.gaMetadata or attrs.metadata
 
-      label = appId + ' ' + label if appId
-      eventData = _.filter [category, action, label, value], (data) -> data?
+      return if not (data.category or data.action)
 
-      gaService.trackEvent eventData
+      gaService.trackEvent data
 
 
 .run ($rootScope, $window, $timeout, gaConfig, gaService) ->
