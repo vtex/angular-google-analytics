@@ -1,6 +1,6 @@
 {
   "name": "ng-google-analytics",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Google Analytics wrapper for AngularJS",
   "main": "dist/ng-google-analytics.js",
   "dependencies": {
