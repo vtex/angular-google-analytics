@@ -19,7 +19,7 @@ angular.module('vtex.ga', [])
 
 .service 'gaService', ($rootScope, $window, $timeout, gaConfig, GAEvent) ->
   new class GAService
-    constructor: @create
+    constructor: -> @create()
 
     create: ->
       config = {}
